@@ -1,4 +1,4 @@
-#!/usr/bin/env ruby
+#!/usr/local/bin/ruby
 
 # Colorize Source Code using Vim
 #
@@ -6,12 +6,19 @@
 #
 # Freeware.
 
+# TODO:
+#   - Make sure caching works with --headers and --mode option.
+#     Currently it's assumed that caching is used with the same options
+#     all the time except --lang or --strip-ws
+#   - Read from STDIN 
+#   - remove too old entries in the cache? 
 
 require "getopts"
 require "tempfile"
+require "md5"
 
 def usage
-  STDERR.puts "USAGE: #{ $0 } [--mode=gui|text] [--lang=vim_lang] [--strip-ws] [--headers] input-file [output-file]"
+  STDERR.puts "USAGE: #{ $0 } [--mode=gui|text] [--lang=vim_lang] [--strip-ws] [--cache [--cache-prefix=prefix]] [--headers] input-file [output-file]"
   exit 1
 end
 
@@ -19,7 +26,12 @@ def strip_ws(str)
   str.strip
 end
 
-getopts(nil, "mode:text", "lang:__auto__", "headers", "strip-ws")
+def gen_cache_name(content, lang)
+  md5 = MD5.new(content)
+  $OPT["cache-prefix"] + ".#{ md5 }.#{ lang }"
+end
+
+getopts(nil, "mode:text", "lang:__auto__", "headers", "strip-ws", "cache", "cache-prefix:/tmp/_colorize")
 
 if ARGV.size != 2 and ARGV.size != 1
   usage
@@ -64,14 +76,31 @@ else
     %{ +"let html_no_header=''" }
   end
   
-  `#{ vim } +"syn on" +"set nonumber" #{ headers } #{ lang } +"set runtimepath=#{ File.dirname f.path } " +"run #{ File.basename f.path }" +"w! #{ output_file }" +"q!" +"q!" #{ input_file } > /dev/null 2> /dev/null`
+  vim_command = %{#{ vim } +"syn on" +"set nonumber" #{ headers } #{ lang } +"set runtimepath=#{ File.dirname f.path } " +"run #{ File.basename f.path }" +"w! #{ output_file }" +"q!" +"q!" #{ input_file } > /dev/null 2> /dev/null}
 
+  if $OPT["cache"] then
+    # TODO: doesn't work together with --headers
+    cn = gen_cache_name(File.readlines(input_file).to_s, $OPT["lang"])
+    if File.exists? cn
+      # result is in cache
+      `cp #{ cn } #{ output_file }`
+    else
+      # generate we have to generate the cache file 
+      `#{ vim_command }`
+      `cp #{ output_file } #{ cn }`
+    end
+  else
+    # no caching
+    `#{ vim_command }`
+  end
+    
   if of != nil
     str = File.readlines(output_file).to_s
+    STDOUT << 
     if $OPT["strip-ws"]
-      STDOUT << strip_ws(str)
+      strip_ws(str)
     else
-      STDOUT << str
+      str
     end
   else
     if $OPT["strip-ws"]
