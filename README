@@ -1,0 +1,10 @@
+This is a mirror of http://www.vim.org/scripts/script.php?script_id=646
+
+A script-wrapper around modified 2html.vim.
+
+Features:
+
+- result caching
+- without surrounding html tags (html, body etc.)
+- striping leading/trailing whitespace
+- specify language (instead of auto-detection by file extension)
