@@ -10,7 +10,6 @@
 #   - Make sure caching works with --headers and --mode option.
 #     Currently it's assumed that caching is used with the same options
 #     all the time except --lang or --strip-ws
-#   - Read from STDIN 
 #   - remove too old entries in the cache? 
 
 require "getopts"
@@ -18,12 +17,38 @@ require "tempfile"
 require "md5"
 
 def usage
-  STDERR.puts "USAGE: #{ $0 } [--mode=gui|text] [--lang=vim_lang] [--strip-ws] [--cache [--cache-prefix=prefix]] [--headers] input-file [output-file]"
+  STDERR.puts "USAGE: #{ $0 } 
+  [--mode=gui|text]                        (default: text)
+  [--lang=vim_lang]                        (default: __auto__)
+  [--strip-ws] 
+  [--cache [--cache-prefix=prefix]]        (default: cache-prefix=/tmp/_colorize)
+  [--headers] 
+  [--terminal=...]                         (default: __none__; which terminal to use for vim)
+  [input-file [output-file]]               (default: stdin stdout) 
+  [--help]"
   exit 1
 end
 
+# remove leading and trailing empty lines
 def strip_ws(str)
-  str.strip
+  # find first non-empty line
+  first_non_empty = 0 
+  str.each_with_index do |line, i|
+    if line.strip != ""
+      first_non_empty = i
+      break
+    end
+  end
+
+  # find last non-empty line
+  last_non_empty = 0 
+  str.each_with_index do |line, i|
+    if line.strip != ""
+      last_non_empty = i
+    end
+  end
+
+  return str.to_a[first_non_empty..last_non_empty].join("")
 end
 
 def gen_cache_name(content, lang)
@@ -31,9 +56,10 @@ def gen_cache_name(content, lang)
   $OPT["cache-prefix"] + ".#{ md5 }.#{ lang }"
 end
 
-getopts(nil, "mode:text", "lang:__auto__", "headers", "strip-ws", "cache", "cache-prefix:/tmp/_colorize")
+getopts(nil, "mode:text", "lang:__auto__", "headers", "terminal:xterm",
+        "strip-ws", "cache", "cache-prefix:/tmp/_colorize", "help")
 
-if ARGV.size != 2 and ARGV.size != 1
+if ARGV.size > 2 or $OPT["help"]
   usage
 else
 
@@ -43,6 +69,15 @@ else
   f.close(false)
 
   input_file, output_file = ARGV
+
+  if input_file.nil?
+    # read input from STDIN
+    inp = Tempfile.new("input")
+    inp << STDIN.read
+    inp.close(false)
+    input_file = inp.path
+  end
+
   if output_file.nil?
     of = Tempfile.new("colorize") 
     of.close(false)
@@ -56,7 +91,11 @@ else
   when "gui"
     '/usr/local/bin/gvim -f'
   when "text"
-    '/usr/local/bin/vim'
+    if $OPT["terminal"] == "__none__" or $OPT["terminal"].empty?
+      '/usr/local/bin/vim'
+    else
+      "/usr/local/bin/vim -T #{ $OPT['terminal'] }"
+    end
   else
     raise
   end
@@ -76,6 +115,9 @@ else
     %{ +"let html_no_header=''" }
   end
   
+
+
+
   vim_command = %{#{ vim } +"syn on" +"set nonumber" #{ headers } #{ lang } +"set runtimepath=#{ File.dirname f.path } " +"run #{ File.basename f.path }" +"w! #{ output_file }" +"q!" +"q!" #{ input_file } > /dev/null 2> /dev/null}
 
   if $OPT["cache"] then
